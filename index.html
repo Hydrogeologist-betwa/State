@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>GeoReport — Watershed Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0e1117;
+    --surface:  #171c26;
+    --card:     #1e2533;
+    --border:   rgba(255,255,255,0.07);
+    --border2:  rgba(255,255,255,0.14);
+    --text:     #e8eaf0;
+    --muted:    #7b8494;
+    --accent:   #4fd1a5;
+    --accent2:  #3ab7e0;
+    --accent3:  #f0a742;
+    --danger:   #e25c5c;
+    --font:     'Sora', sans-serif;
+    --mono:     'DM Mono', monospace;
+    --display:  'DM Serif Display', serif;
+    --r:        12px;
+    --rs:       7px;
+  }
+
+  html, body { height: 100%; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; line-height: 1.6; }
+
+  /* ── LAYOUT ── */
+  .app { display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 64px 1fr; min-height: 100vh; }
+
+  /* ── HEADER ── */
+  header {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg,var(--accent),var(--accent2)); border-radius: 8px; display:flex;align-items:center;justify-content:center; }
+  .logo-icon svg { width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round; }
+  .logo-text { font-family: var(--display); font-size: 20px; }
+  .logo-text span { color: var(--accent); }
+  header nav { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .badge { font-size:11px;font-family:var(--mono);background:rgba(79,209,165,.12);color:var(--accent);border:1px solid rgba(79,209,165,.25);padding:3px 10px;border-radius:20px; }
+  .badge-blue { background:rgba(58,183,224,.12);color:var(--accent2);border-color:rgba(58,183,224,.25); }
+
+  /* ── SIDEBAR ── */
+  aside { border-right:1px solid var(--border);background:var(--surface);padding:24px 20px;display:flex;flex-direction:column;gap:20px;overflow-y:auto; }
+  .section-label { font-size:11px;font-family:var(--mono);color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px; }
+
+  .coord-row { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+  .field label { display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-family:var(--mono); }
+  .field input { width:100%;background:var(--card);border:1px solid var(--border2);border-radius:var(--rs);color:var(--text);font-family:var(--mono);font-size:14px;padding:9px 12px;outline:none;transition:border-color .15s; }
+  .field input:focus { border-color:var(--accent); }
+  .field input.err { border-color:var(--danger); }
+
+  /* Map preview */
+  .map-preview { border-radius:var(--rs);border:1px solid var(--border);overflow:hidden;background:var(--card);height:170px;position:relative; }
+  #leaflet-map { width:100%;height:100%; }
+  .map-hint { position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);pointer-events:none; }
+
+  /* API URL */
+  .api-row { display:flex;flex-direction:column;gap:5px; }
+  .api-row label { font-size:12px;color:var(--muted);font-family:var(--mono); }
+  .api-row input { width:100%;background:var(--card);border:1px solid var(--border2);border-radius:var(--rs);color:var(--text);font-family:var(--mono);font-size:12px;padding:9px 12px;outline:none;transition:border-color .15s; }
+  .api-row input:focus { border-color:var(--accent2); }
+
+  /* Sources info */
+  .sources-box { background:rgba(79,209,165,.05);border:1px solid rgba(79,209,165,.15);border-radius:var(--rs);padding:12px 14px; }
+  .sources-box .src-title { font-size:11px;font-family:var(--mono);color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px; }
+  .src-item { display:flex;gap:8px;font-size:11px;color:var(--muted);margin-bottom:4px;align-items:flex-start; }
+  .src-dot { width:5px;height:5px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:5px; }
+
+  /* Presets */
+  .presets { display:flex;flex-direction:column;gap:6px; }
+  .preset-btn { display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:var(--rs);padding:9px 12px;cursor:pointer;transition:border-color .15s,background .15s;text-align:left;width:100%; }
+  .preset-btn:hover { border-color:var(--border2);background:rgba(255,255,255,.04); }
+  .preset-dot { width:8px;height:8px;border-radius:50%;flex-shrink:0; }
+  .preset-name { font-size:13px;font-weight:500;color:var(--text); }
+  .preset-coords { font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:1px; }
+
+  /* Run button */
+  .run-btn { width:100%;background:var(--accent);color:#0a1a14;font-family:var(--font);font-size:14px;font-weight:600;border:none;border-radius:var(--rs);padding:13px;cursor:pointer;transition:opacity .15s,transform .1s;display:flex;align-items:center;justify-content:center;gap:8px; }
+  .run-btn:hover { opacity:.9; }
+  .run-btn:active { transform:scale(.98); }
+  .run-btn:disabled { opacity:.45;cursor:not-allowed;transform:none; }
+  .run-btn svg { width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.5; }
+
+  /* ── MAIN ── */
+  main { overflow-y:auto;background:var(--bg);position:relative; }
+
+  /* Empty state */
+  .empty-state { display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;padding:40px;text-align:center; }
+  .empty-icon { width:64px;height:64px;border-radius:20px;background:var(--card);border:1px solid var(--border);display:flex;align-items:center;justify-content:center; }
+  .empty-icon svg { width:28px;height:28px;stroke:var(--muted);fill:none;stroke-width:1.5; }
+  .empty-state h2 { font-family:var(--display);font-size:22px; }
+  .empty-state p { color:var(--muted);max-width:360px;font-size:14px; }
+
+  .feature-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:480px;margin-top:4px; }
+  .feature-chip { background:var(--card);border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;font-size:11px;color:var(--muted);text-align:center; }
+  .feature-chip span { display:block;font-size:16px;margin-bottom:3px; }
+
+  /* Loading */
+  .loading-state { display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:22px;padding:40px; }
+  .spinner { width:40px;height:40px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .loading-steps { display:flex;flex-direction:column;gap:10px;width:280px; }
+  .loading-step { display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);transition:color .3s; }
+  .loading-step.active { color:var(--text); }
+  .loading-step.done { color:var(--accent); }
+  .step-dot { width:6px;height:6px;border-radius:50%;background:var(--border2);flex-shrink:0;transition:background .3s; }
+  .loading-step.active .step-dot { background:var(--accent2); }
+  .loading-step.done .step-dot { background:var(--accent); }
+  .loading-note { font-size:12px;color:var(--muted);max-width:280px;text-align:center;line-height:1.6; }
+
+  /* Report */
+  .report { padding:28px 32px;display:flex;flex-direction:column;gap:28px;animation:fadeIn .4s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none} }
+
+  .report-header { display:flex;align-items:flex-start;justify-content:space-between;gap:16px; }
+  .report-title { font-family:var(--display);font-size:26px;line-height:1.2;font-style:italic; }
+  .report-subtitle { font-size:13px;color:var(--muted);margin-top:4px;font-family:var(--mono); }
+
+  .header-actions { display:flex;gap:8px;flex-shrink:0; }
+  .action-btn { display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--border2);border-radius:var(--rs);color:var(--text);font-family:var(--font);font-size:13px;font-weight:500;padding:9px 14px;cursor:pointer;white-space:nowrap;transition:border-color .15s,background .15s; }
+  .action-btn:hover { border-color:var(--accent);background:rgba(79,209,165,.06);color:var(--accent); }
+  .action-btn:disabled { opacity:.5;cursor:not-allowed; }
+  .action-btn svg { width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2; }
+
+  /* Stats */
+  .stats-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px; }
+  .stat-card { background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px; }
+  .stat-label { font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px; }
+  .stat-value { font-size:22px;font-weight:600;font-family:var(--mono);line-height:1; }
+  .stat-unit { font-size:12px;color:var(--muted);margin-top:3px; }
+
+  /* Data sources strip */
+  .sources-strip { display:flex;gap:8px;flex-wrap:wrap; }
+  .src-tag { font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;border:1px solid var(--border2);color:var(--muted); }
+
+  /* Maps */
+  .section-head { font-family:var(--display);font-size:17px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border); }
+  .maps-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px; }
+  .map-card { background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;cursor:zoom-in;transition:border-color .2s,transform .2s; }
+  .map-card:hover { border-color:var(--border2);transform:translateY(-2px); }
+  .map-card-title { padding:10px 14px;font-size:12px;font-family:var(--mono);color:var(--muted);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:7px; }
+  .map-dot { width:6px;height:6px;border-radius:50%; }
+  .map-card img { width:100%;display:block; }
+
+  /* Lightbox */
+  .lightbox { position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out;animation:fadeIn .2s ease; }
+  .lightbox img { max-width:100%;max-height:90vh;border-radius:var(--r);box-shadow:0 24px 80px rgba(0,0,0,.7); }
+  .lb-close { position:absolute;top:20px;right:24px;background:var(--card);border:1px solid var(--border2);border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text);font-size:18px;line-height:1; }
+
+  /* Error */
+  .error-card { background:rgba(226,92,92,.08);border:1px solid rgba(226,92,92,.3);border-radius:var(--r);padding:16px 20px;color:var(--danger);font-size:14px;display:flex;align-items:flex-start;gap:10px; }
+  .error-card svg { flex-shrink:0;width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;margin-top:1px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width:5px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border2);border-radius:10px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M3 21l9-18 9 18"/><path d="M6 15h12"/><circle cx="12" cy="7" r="1.5"/></svg>
+      </div>
+      <div class="logo-text">Geo<span>Report</span></div>
+    </div>
+    <nav>
+      <span class="badge">v2.0 · API-Only</span>
+      <span class="badge badge-blue">No Shapefiles</span>
+    </nav>
+  </header>
+
+  <!-- SIDEBAR -->
+  <aside>
+
+    <!-- Coordinates -->
+    <div>
+      <div class="section-label">Target Location</div>
+      <div class="coord-row">
+        <div class="field">
+          <label>Latitude</label>
+          <input type="number" id="lat" placeholder="28.6" step="0.0001" min="-90" max="90"/>
+        </div>
+        <div class="field">
+          <label>Longitude</label>
+          <input type="number" id="lon" placeholder="77.2" step="0.0001" min="-180" max="180"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map preview -->
+    <div>
+      <div class="section-label">Preview — click map to pick point</div>
+      <div class="map-preview">
+        <div id="leaflet-map"></div>
+        <div class="map-hint" id="map-hint">Enter coordinates or click map</div>
+      </div>
+    </div>
+
+    <!-- Data sources -->
+    <div class="sources-box">
+      <div class="src-title">🌐 Live Data Sources</div>
+      <div class="src-item"><div class="src-dot"></div><div><b style="color:var(--text)">Watershed</b> — computed from DEM (pysheds D8)</div></div>
+      <div class="src-item"><div class="src-dot"></div><div><b style="color:var(--text)">DEM</b> — OpenTopography SRTM GL1 30m</div></div>
+      <div class="src-item"><div class="src-dot"></div><div><b style="color:var(--text)">Streams</b> — OpenStreetMap Overpass API</div></div>
+      <div class="src-item"><div class="src-dot"></div><div><b style="color:var(--text)">Aquifer</b> — IGRAC GGMN / WHYMAP</div></div>
+      <div class="src-item"><div class="src-dot"></div><div><b style="color:var(--text)">Basemaps</b> — Esri + OpenTopoMap</div></div>
+    </div>
+
+    <!-- Backend URL -->
+    <div>
+      <div class="section-label">Backend URL</div>
+      <div class="api-row">
+        <label>API endpoint</label>
+        <input type="text" id="api-url" value="http://localhost:5000" placeholder="https://your-server.com"/>
+      </div>
+    </div>
+
+    <!-- Presets -->
+    <div>
+      <div class="section-label">Sample Locations</div>
+      <div class="presets">
+        <button class="preset-btn" onclick="setPreset(28.6,77.2)">
+          <div class="preset-dot" style="background:#4fd1a5"></div>
+          <div><div class="preset-name">Delhi NCR</div><div class="preset-coords">28.6°N · 77.2°E</div></div>
+        </button>
+        <button class="preset-btn" onclick="setPreset(10.52,78.17)">
+          <div class="preset-dot" style="background:#3ab7e0"></div>
+          <div><div class="preset-name">Tamil Nadu</div><div class="preset-coords">10.52°N · 78.17°E</div></div>
+        </button>
+        <button class="preset-btn" onclick="setPreset(21.25,81.62)">
+          <div class="preset-dot" style="background:#f0a742"></div>
+          <div><div class="preset-name">Raipur, CG</div><div class="preset-coords">21.25°N · 81.62°E</div></div>
+        </button>
+        <button class="preset-btn" onclick="setPreset(17.60,80.72)">
+          <div class="preset-dot" style="background:#a78bfa"></div>
+          <div><div class="preset-name">Andhra Pradesh</div><div class="preset-coords">17.6°N · 80.72°E</div></div>
+        </button>
+      </div>
+    </div>
+
+    <button class="run-btn" id="run-btn" onclick="runReport()">
+      <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+      Generate Report
+    </button>
+
+  </aside>
+
+  <!-- MAIN PANEL -->
+  <main id="main-panel">
+
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24"><path d="M3 3l18 18M3 17l4-4 4 4 4-6 4 4"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+      </div>
+      <h2>Enter any coordinates</h2>
+      <p>GeoReport fetches everything live — no shapefiles needed. Just drop a pin anywhere on Earth and get a full terrain + watershed report.</p>
+      <div class="feature-grid">
+        <div class="feature-chip"><span>⛰️</span>DEM + Terrain</div>
+        <div class="feature-chip"><span>🌊</span>Watershed</div>
+        <div class="feature-chip"><span>🗺️</span>Stream Net</div>
+        <div class="feature-chip"><span>💧</span>Aquifer</div>
+        <div class="feature-chip"><span>🛰️</span>Satellite</div>
+        <div class="feature-chip"><span>📄</span>PDF Export</div>
+      </div>
+    </div>
+
+    <div class="loading-state" id="loading-state" style="display:none">
+      <div class="spinner"></div>
+      <div class="loading-steps">
+        <div class="loading-step" id="s1"><div class="step-dot"></div>Downloading DEM from OpenTopography</div>
+        <div class="loading-step" id="s2"><div class="step-dot"></div>Delineating watershed (pysheds D8)</div>
+        <div class="loading-step" id="s3"><div class="step-dot"></div>Fetching full-res DEM for extent</div>
+        <div class="loading-step" id="s4"><div class="step-dot"></div>Scraping streams from OpenStreetMap</div>
+        <div class="loading-step" id="s5"><div class="step-dot"></div>Fetching aquifer from IGRAC / WHYMAP</div>
+        <div class="loading-step" id="s6"><div class="step-dot"></div>Rendering 8 maps + basemap tiles</div>
+      </div>
+      <div class="loading-note">This takes 30–90 seconds — all data is fetched live from public APIs.</div>
+    </div>
+
+    <div id="report-panel" style="display:none"></div>
+
+  </main>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" style="display:none" onclick="closeLb()">
+  <span class="lb-close" onclick="closeLb()">✕</span>
+  <img id="lb-img" src="" alt="Map detail"/>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+// ── LEAFLET ───────────────────────────────────────────────────────────────
+let map = null, marker = null;
+
+function initMap() {
+  map = L.map('leaflet-map', { zoomControl: false, attributionControl: false })
+         .setView([20, 78], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  map.on('click', e => {
+    setCoords(e.latlng.lat.toFixed(4), e.latlng.lng.toFixed(4));
+  });
+}
+
+function setCoords(lat, lon) {
+  document.getElementById('lat').value = lat;
+  document.getElementById('lon').value = lon;
+  if (marker) marker.remove();
+  marker = L.circleMarker([lat, lon], {
+    radius: 7, color: '#4fd1a5', fillColor: '#4fd1a5', fillOpacity: 0.85, weight: 2
+  }).addTo(map);
+  map.setView([lat, lon], 8);
+  document.getElementById('map-hint').style.display = 'none';
+}
+
+initMap();
+
+['lat','lon'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () => {
+    const la = parseFloat(document.getElementById('lat').value);
+    const lo = parseFloat(document.getElementById('lon').value);
+    if (!isNaN(la) && !isNaN(lo)) setCoords(la, lo);
+  })
+);
+
+function setPreset(la, lo) { setCoords(la, lo); }
+
+// ── LOADING ANIMATION ─────────────────────────────────────────────────────
+const STEPS = ['s1','s2','s3','s4','s5','s6'];
+let stepTimer = null, stepIdx = 0;
+const STEP_DELAYS = [3000, 8000, 5000, 6000, 5000, 10000]; // realistic timing
+
+function startLoading() {
+  STEPS.forEach(id => document.getElementById(id).className = 'loading-step');
+  stepIdx = 0;
+  tick();
+}
+
+function tick() {
+  if (stepIdx >= STEPS.length) return;
+  if (stepIdx > 0) document.getElementById(STEPS[stepIdx-1]).className = 'loading-step done';
+  document.getElementById(STEPS[stepIdx]).className = 'loading-step active';
+  stepTimer = setTimeout(() => { stepIdx++; tick(); }, STEP_DELAYS[stepIdx]);
+}
+
+function stopLoading() {
+  clearTimeout(stepTimer);
+  STEPS.forEach(id => document.getElementById(id).className = 'loading-step done');
+}
+
+// ── MAP METADATA ──────────────────────────────────────────────────────────
+const MAP_META = {
+  dem:       { label: 'Digital Elevation Model (SRTM 30m)',  dot: '#4fd1a5' },
+  slope:     { label: 'Slope Analysis',                      dot: '#f0a742' },
+  hillshade: { label: 'Hillshade (Az 315°, Alt 45°)',        dot: '#7b8494' },
+  watershed: { label: 'Watershed & OSM Stream Network',      dot: '#3ab7e0' },
+  aquifer:   { label: 'Aquifer (IGRAC / WHYMAP)',            dot: '#f0a742' },
+  satellite: { label: 'Satellite Imagery (Esri)',            dot: '#e25c5c' },
+  topo:      { label: 'Topographic Map (OpenTopoMap)',       dot: '#a78bfa' },
+  combined:  { label: 'Combined Terrain Overlay',            dot: '#4fd1a5' },
+};
+
+// ── RENDER REPORT ─────────────────────────────────────────────────────────
+function renderReport(data, lat, lon) {
+  const ws = data.watershed_info;
+  const src = ws.sources || {};
+
+  const statsHtml = `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Watershed Area</div>
+        <div class="stat-value" style="color:var(--accent)">${ws.area_km2?.toLocaleString() || '—'}</div>
+        <div class="stat-unit">km²</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Elevation Range</div>
+        <div class="stat-value" style="color:var(--accent2)">${ws.elev_min_m}–${ws.elev_max_m}</div>
+        <div class="stat-unit">metres ASL</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Mean Elevation</div>
+        <div class="stat-value" style="color:var(--accent3)">${ws.elev_mean_m}</div>
+        <div class="stat-unit">metres</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Mean Slope</div>
+        <div class="stat-value" style="color:#a78bfa">${ws.slope_mean_deg}</div>
+        <div class="stat-unit">degrees</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">OSM Streams</div>
+        <div class="stat-value" style="color:var(--accent)">${ws.stream_count}</div>
+        <div class="stat-unit">segments</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Aquifer</div>
+        <div class="stat-value" style="font-size:18px;margin-top:4px;color:${ws.has_aquifer?'var(--accent)':'var(--muted)'}">${ws.has_aquifer ? '✓ Present' : '— None'}</div>
+        <div class="stat-unit">${ws.has_aquifer ? 'IGRAC / WHYMAP' : 'not detected'}</div>
+      </div>
+    </div>`;
+
+  const srcHtml = Object.entries(src).map(([k,v]) =>
+    `<span class="src-tag">${k}: ${v}</span>`
+  ).join('');
+
+  const mapsHtml = Object.entries(data.maps).map(([key, src]) => {
+    const m = MAP_META[key] || { label: key, dot: '#888' };
+    return `
+      <div class="map-card" onclick="openLb('${src}')">
+        <div class="map-card-title">
+          <div class="map-dot" style="background:${m.dot}"></div>
+          ${m.label}
+        </div>
+        <img src="${src}" alt="${m.label}" loading="lazy"/>
+      </div>`;
+  }).join('');
+
+  const elapsed = ws.elapsed_s ? `· generated in ${ws.elapsed_s}s` : '';
+
+  document.getElementById('report-panel').innerHTML = `
+    <div class="report">
+      <div class="report-header">
+        <div>
+          <div class="report-title">Watershed Report</div>
+          <div class="report-subtitle">📍 ${parseFloat(lat).toFixed(4)}°N, ${parseFloat(lon).toFixed(4)}°E
+            · ${new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})} ${elapsed}</div>
+        </div>
+        <div class="header-actions">
+          <button class="action-btn" onclick="downloadPDF(${lat},${lon})" id="pdf-btn">
+            <svg viewBox="0 0 24 24"><path d="M12 15V3m0 12l-4-4m4 4l4-4"/><path d="M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17"/></svg>
+            Download PDF
+          </button>
+        </div>
+      </div>
+
+      ${statsHtml}
+
+      <div>
+        <div class="section-head">Data Sources</div>
+        <div class="sources-strip">${srcHtml}</div>
+      </div>
+
+      <div>
+        <div class="section-head">Generated Maps — click to zoom</div>
+        <div class="maps-grid">${mapsHtml}</div>
+      </div>
+    </div>`;
+
+  document.getElementById('report-panel').style.display = 'block';
+}
+
+// ── LIGHTBOX ──────────────────────────────────────────────────────────────
+function openLb(src) {
+  document.getElementById('lb-img').src = src;
+  document.getElementById('lightbox').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function closeLb() {
+  document.getElementById('lightbox').style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLb(); });
+
+// ── PDF DOWNLOAD ──────────────────────────────────────────────────────────
+async function downloadPDF(lat, lon) {
+  const api = document.getElementById('api-url').value.replace(/\/$/,'');
+  const btn = document.getElementById('pdf-btn');
+  btn.textContent = 'Generating…'; btn.disabled = true;
+  try {
+    const res = await fetch(`${api}/api/report/pdf`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({lat, lon}),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `GeoReport_${lat}_${lon}.pdf`; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('PDF failed: ' + e.message);
+  } finally {
+    btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 15V3m0 12l-4-4m4 4l4-4"/><path d="M2 17l.621 2.485A2 2 0 004.561 21h14.878a2 2 0 001.94-1.515L22 17"/></svg> Download PDF`;
+    btn.disabled = false;
+  }
+}
+
+// ── MAIN RUN ──────────────────────────────────────────────────────────────
+async function runReport() {
+  const lat = parseFloat(document.getElementById('lat').value);
+  const lon = parseFloat(document.getElementById('lon').value);
+  const api = document.getElementById('api-url').value.replace(/\/$/,'');
+
+  if (isNaN(lat) || isNaN(lon)) {
+    ['lat','lon'].forEach(id => {
+      if (isNaN(parseFloat(document.getElementById(id).value))) {
+        document.getElementById(id).classList.add('err');
+        setTimeout(() => document.getElementById(id).classList.remove('err'), 2000);
+      }
+    });
+    return;
+  }
+
+  // Switch to loading view
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('report-panel').style.display = 'none';
+  document.getElementById('loading-state').style.display = 'flex';
+  document.getElementById('run-btn').disabled = true;
+  startLoading();
+
+  try {
+    const res = await fetch(`${api}/api/report`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({lat, lon}),
+    });
+    stopLoading();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({error: `HTTP ${res.status}`}));
+      showError(err.error || `HTTP ${res.status}`);
+      return;
+    }
+    const data = await res.json();
+    document.getElementById('loading-state').style.display = 'none';
+    renderReport(data, lat, lon);
+  } catch(e) {
+    stopLoading();
+    showError(`Cannot reach backend at ${api}\n\nMake sure app.py is running.\n\n${e.message}`);
+  } finally {
+    document.getElementById('run-btn').disabled = false;
+  }
+}
+
+function showError(msg) {
+  document.getElementById('loading-state').style.display = 'none';
+  document.getElementById('report-panel').innerHTML = `
+    <div class="report">
+      <div class="error-card">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div><strong>Error</strong><br/><span style="font-size:13px;opacity:.8;white-space:pre-line">${msg}</span></div>
+      </div>
+    </div>`;
+  document.getElementById('report-panel').style.display = 'block';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && ['lat','lon'].includes(e.target.id)) runReport();
+});
+</script>
+</body>
+</html>
